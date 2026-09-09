@@ -19924,15 +19924,16 @@ func TestAIBridgeSpend(t *testing.T) {
 	}, finished(start))
 	priced(b1.ID, 3000, 300, 100, 0, 0)
 
-	aliceTotals := database.GetAIBridgeSpendUserSummaryRow{
+	aliceTotals := database.ListAIBridgeSpendRollupsRow{
+		Grain:                 "total",
 		TotalCostMicros:       1700,
 		RequestCount:          3,
 		UnpricedRequestCount:  1,
-		SessionCount:          2,
 		InputTokens:           155,
 		OutputTokens:          80,
 		CacheReadInputTokens:  10,
 		CacheWriteInputTokens: 5,
+		TotalCount:            1,
 	}
 
 	t.Run("ListByUser", func(t *testing.T) {
@@ -19969,7 +19970,7 @@ func TestAIBridgeSpend(t *testing.T) {
 			TotalCostMicros:       aliceTotals.TotalCostMicros,
 			RequestCount:          aliceTotals.RequestCount,
 			UnpricedRequestCount:  aliceTotals.UnpricedRequestCount,
-			SessionCount:          aliceTotals.SessionCount,
+			SessionCount:          2,
 			InputTokens:           aliceTotals.InputTokens,
 			OutputTokens:          aliceTotals.OutputTokens,
 			CacheReadInputTokens:  aliceTotals.CacheReadInputTokens,
@@ -20074,151 +20075,99 @@ func TestAIBridgeSpend(t *testing.T) {
 		}
 	}
 
-	t.Run("GlobalSummary", func(t *testing.T) {
+	t.Run("GlobalRollups", func(t *testing.T) {
 		t.Parallel()
 		ctx := testutil.Context(t, testutil.WaitLong)
-		got, err := db.GetAIBridgeSpendUserSummary(ctx, database.GetAIBridgeSpendUserSummaryParams{StartDate: start, EndDate: end})
+		rows, err := db.ListAIBridgeSpendRollups(ctx, database.ListAIBridgeSpendRollupsParams{StartDate: start, EndDate: end, LimitCount: 10})
 		require.NoError(t, err)
-		require.Equal(t, database.GetAIBridgeSpendUserSummaryRow{
-			TotalCostMicros: 4700, RequestCount: 4, UnpricedRequestCount: 1, SessionCount: 3,
-			InputTokens: 455, OutputTokens: 180, CacheReadInputTokens: 10, CacheWriteInputTokens: 5,
-		}, got)
-		providers, err := db.ListAIBridgeSpendByUserProvider(ctx, database.ListAIBridgeSpendByUserProviderParams{StartDate: start, EndDate: end, LimitCount: 10})
+		require.Equal(t, []database.ListAIBridgeSpendRollupsRow{
+			{Grain: "client", Client: "cursor", TotalCostMicros: 3200, RequestCount: 2, UnpricedRequestCount: 1, InputTokens: 335, OutputTokens: 120, TotalCount: 3},
+			{Grain: "client", Client: "claude-code", TotalCostMicros: 1500, RequestCount: 1, InputTokens: 120, OutputTokens: 60, CacheReadInputTokens: 10, CacheWriteInputTokens: 5, TotalCount: 3},
+			{Grain: "client", Client: "Unknown", RequestCount: 1, TotalCount: 3},
+			{Grain: "model", Provider: "openai", ProviderName: "openai-main", Model: "gpt-4", TotalCostMicros: 3200, RequestCount: 2, UnpricedRequestCount: 1, InputTokens: 335, OutputTokens: 120, TotalCount: 2},
+			{Grain: "model", Provider: "anthropic", ProviderName: "anthropic-main", Model: "claude", TotalCostMicros: 1500, RequestCount: 2, InputTokens: 120, OutputTokens: 60, CacheReadInputTokens: 10, CacheWriteInputTokens: 5, TotalCount: 2},
+			{Grain: "provider", Provider: "openai", ProviderName: "openai-main", TotalCostMicros: 3200, RequestCount: 2, UnpricedRequestCount: 1, InputTokens: 335, OutputTokens: 120, TotalCount: 2},
+			{Grain: "provider", Provider: "anthropic", ProviderName: "anthropic-main", TotalCostMicros: 1500, RequestCount: 2, InputTokens: 120, OutputTokens: 60, CacheReadInputTokens: 10, CacheWriteInputTokens: 5, TotalCount: 2},
+			{Grain: "total", TotalCostMicros: 4700, RequestCount: 4, UnpricedRequestCount: 1, InputTokens: 455, OutputTokens: 180, CacheReadInputTokens: 10, CacheWriteInputTokens: 5, TotalCount: 1},
+		}, rows)
+
+		// Alice's sess-a1 spans claude-code and cursor, so the per-client
+		// counts add up to four while the total dedupes it to three.
+		sessions, err := db.ListAIBridgeSpendSessionCounts(ctx, database.ListAIBridgeSpendSessionCountsParams{StartDate: start, EndDate: end})
 		require.NoError(t, err)
-		require.Equal(t, []database.ListAIBridgeSpendByUserProviderRow{
-			{Provider: "openai", ProviderName: "openai-main", TotalCostMicros: 3200, RequestCount: 2, UnpricedRequestCount: 1, InputTokens: 335, OutputTokens: 120, TotalCount: 2},
-			{Provider: "anthropic", ProviderName: "anthropic-main", TotalCostMicros: 1500, RequestCount: 2, InputTokens: 120, OutputTokens: 60, CacheReadInputTokens: 10, CacheWriteInputTokens: 5, TotalCount: 2},
-		}, providers)
-		models, err := db.ListAIBridgeSpendByUserModel(ctx, database.ListAIBridgeSpendByUserModelParams{StartDate: start, EndDate: end, LimitCount: 10})
-		require.NoError(t, err)
-		require.Len(t, models, 2)
-		require.EqualValues(t, 3200, models[0].TotalCostMicros)
-		require.EqualValues(t, 1500, models[1].TotalCostMicros)
-		clients, err := db.ListAIBridgeSpendByUserClient(ctx, database.ListAIBridgeSpendByUserClientParams{StartDate: start, EndDate: end, LimitCount: 10})
-		require.NoError(t, err)
-		require.Len(t, clients, 3)
-		require.EqualValues(t, 3200, clients[0].TotalCostMicros)
-		require.EqualValues(t, 2, clients[0].SessionCount)
-		require.EqualValues(t, 1500, clients[1].TotalCostMicros)
-		require.Zero(t, clients[2].TotalCostMicros)
+		require.ElementsMatch(t, []database.ListAIBridgeSpendSessionCountsRow{
+			{Grain: "client", Client: "claude-code", SessionCount: 1},
+			{Grain: "client", Client: "cursor", SessionCount: 2},
+			{Grain: "client", Client: "Unknown", SessionCount: 1},
+			{Grain: "total", SessionCount: 3},
+		}, sessions)
 	})
 
-	t.Run("UserSummary", func(t *testing.T) {
+	t.Run("UserRollups", func(t *testing.T) {
 		t.Parallel()
 		ctx := testutil.Context(t, testutil.WaitLong)
-		got, err := db.GetAIBridgeSpendUserSummary(ctx, database.GetAIBridgeSpendUserSummaryParams{
-			UserID:    alice.ID,
-			StartDate: start,
-			EndDate:   end,
-		})
-		require.NoError(t, err)
-		require.Equal(t, aliceTotals, got)
-
-		empty, err := db.GetAIBridgeSpendUserSummary(ctx, database.GetAIBridgeSpendUserSummaryParams{
-			UserID:    carol.ID,
-			StartDate: start,
-			EndDate:   end,
-		})
-		require.NoError(t, err)
-		require.Equal(t, database.GetAIBridgeSpendUserSummaryRow{}, empty)
-	})
-
-	t.Run("ByModel", func(t *testing.T) {
-		t.Parallel()
-		ctx := testutil.Context(t, testutil.WaitLong)
-		rows, err := db.ListAIBridgeSpendByUserModel(ctx, database.ListAIBridgeSpendByUserModelParams{
+		rows, err := db.ListAIBridgeSpendRollups(ctx, database.ListAIBridgeSpendRollupsParams{
 			UserID:     alice.ID,
 			StartDate:  start,
 			EndDate:    end,
 			LimitCount: 10,
 		})
 		require.NoError(t, err)
-		require.Equal(t, []database.ListAIBridgeSpendByUserModelRow{
-			{
-				Provider:              "anthropic",
-				ProviderName:          "anthropic-main",
-				Model:                 "claude",
-				TotalCostMicros:       1500,
-				RequestCount:          2,
-				UnpricedRequestCount:  0,
-				InputTokens:           120,
-				OutputTokens:          60,
-				CacheReadInputTokens:  10,
-				CacheWriteInputTokens: 5,
-				TotalCount:            2,
-			},
-			{
-				Provider:             "openai",
-				ProviderName:         "openai-main",
-				Model:                "gpt-4",
-				TotalCostMicros:      200,
-				RequestCount:         1,
-				UnpricedRequestCount: 1,
-				InputTokens:          35,
-				OutputTokens:         20,
-				TotalCount:           2,
-			},
+		require.Equal(t, []database.ListAIBridgeSpendRollupsRow{
+			{Grain: "client", Client: "claude-code", TotalCostMicros: 1500, RequestCount: 1, InputTokens: 120, OutputTokens: 60, CacheReadInputTokens: 10, CacheWriteInputTokens: 5, TotalCount: 3},
+			{Grain: "client", Client: "cursor", TotalCostMicros: 200, RequestCount: 1, UnpricedRequestCount: 1, InputTokens: 35, OutputTokens: 20, TotalCount: 3},
+			{Grain: "client", Client: "Unknown", RequestCount: 1, TotalCount: 3},
+			{Grain: "model", Provider: "anthropic", ProviderName: "anthropic-main", Model: "claude", TotalCostMicros: 1500, RequestCount: 2, InputTokens: 120, OutputTokens: 60, CacheReadInputTokens: 10, CacheWriteInputTokens: 5, TotalCount: 2},
+			{Grain: "model", Provider: "openai", ProviderName: "openai-main", Model: "gpt-4", TotalCostMicros: 200, RequestCount: 1, UnpricedRequestCount: 1, InputTokens: 35, OutputTokens: 20, TotalCount: 2},
+			{Grain: "provider", Provider: "anthropic", ProviderName: "anthropic-main", TotalCostMicros: 1500, RequestCount: 2, InputTokens: 120, OutputTokens: 60, CacheReadInputTokens: 10, CacheWriteInputTokens: 5, TotalCount: 2},
+			{Grain: "provider", Provider: "openai", ProviderName: "openai-main", TotalCostMicros: 200, RequestCount: 1, UnpricedRequestCount: 1, InputTokens: 35, OutputTokens: 20, TotalCount: 2},
+			aliceTotals,
 		}, rows)
 
-		// The cap keeps the most expensive entries and still reports how many
-		// there are.
-		capped, err := db.ListAIBridgeSpendByUserModel(ctx, database.ListAIBridgeSpendByUserModelParams{
+		// The cap keeps the most expensive entry per grain and still reports
+		// how many there are.
+		capped, err := db.ListAIBridgeSpendRollups(ctx, database.ListAIBridgeSpendRollupsParams{
 			UserID:     alice.ID,
 			StartDate:  start,
 			EndDate:    end,
 			LimitCount: 1,
 		})
 		require.NoError(t, err)
-		require.Equal(t, rows[:1], capped)
+		require.Equal(t, []database.ListAIBridgeSpendRollupsRow{rows[0], rows[3], rows[5], rows[7]}, capped)
 
-		empty, err := db.ListAIBridgeSpendByUserModel(ctx, database.ListAIBridgeSpendByUserModelParams{
+		sessions, err := db.ListAIBridgeSpendSessionCounts(ctx, database.ListAIBridgeSpendSessionCountsParams{
+			UserID:    alice.ID,
+			StartDate: start,
+			EndDate:   end,
+		})
+		require.NoError(t, err)
+		require.ElementsMatch(t, []database.ListAIBridgeSpendSessionCountsRow{
+			{Grain: "client", Client: "claude-code", SessionCount: 1},
+			{Grain: "client", Client: "cursor", SessionCount: 1},
+			{Grain: "client", Client: "Unknown", SessionCount: 1},
+			{Grain: "total", SessionCount: 2},
+		}, sessions)
+	})
+
+	t.Run("EmptyRollups", func(t *testing.T) {
+		t.Parallel()
+		ctx := testutil.Context(t, testutil.WaitLong)
+		// A user without requests still gets a zeroed total row.
+		rows, err := db.ListAIBridgeSpendRollups(ctx, database.ListAIBridgeSpendRollupsParams{
 			UserID:     carol.ID,
 			StartDate:  start,
 			EndDate:    end,
 			LimitCount: 10,
 		})
 		require.NoError(t, err)
-		require.Empty(t, empty)
-	})
+		require.Equal(t, []database.ListAIBridgeSpendRollupsRow{{Grain: "total", TotalCount: 1}}, rows)
 
-	t.Run("ByClient", func(t *testing.T) {
-		t.Parallel()
-		ctx := testutil.Context(t, testutil.WaitLong)
-		rows, err := db.ListAIBridgeSpendByUserClient(ctx, database.ListAIBridgeSpendByUserClientParams{
-			UserID:     alice.ID,
-			StartDate:  start,
-			EndDate:    end,
-			LimitCount: 10,
+		sessions, err := db.ListAIBridgeSpendSessionCounts(ctx, database.ListAIBridgeSpendSessionCountsParams{
+			UserID:    carol.ID,
+			StartDate: start,
+			EndDate:   end,
 		})
 		require.NoError(t, err)
-		require.Equal(t, []database.ListAIBridgeSpendByUserClientRow{
-			{
-				Client:                "claude-code",
-				TotalCostMicros:       1500,
-				RequestCount:          1,
-				SessionCount:          1,
-				InputTokens:           120,
-				OutputTokens:          60,
-				CacheReadInputTokens:  10,
-				CacheWriteInputTokens: 5,
-				TotalCount:            3,
-			},
-			{
-				Client:               "cursor",
-				TotalCostMicros:      200,
-				RequestCount:         1,
-				UnpricedRequestCount: 1,
-				SessionCount:         1,
-				InputTokens:          35,
-				OutputTokens:         20,
-				TotalCount:           3,
-			},
-			{
-				Client:       "Unknown",
-				RequestCount: 1,
-				SessionCount: 1,
-				TotalCount:   3,
-			},
-		}, rows)
+		require.Equal(t, []database.ListAIBridgeSpendSessionCountsRow{{Grain: "total"}}, sessions)
 	})
 }

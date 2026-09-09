@@ -42,6 +42,14 @@ const (
 	// The spend overview lists users, not events, so its pages are small.
 	defaultAIGatewaySpendUsersLimit = 10
 	maxAIGatewaySpendUsersLimit     = 100
+
+	// Grains tag the rows of ListAIBridgeSpendRollups and
+	// ListAIBridgeSpendSessionCounts.
+	spendGrainTotal    = "total"
+	spendGrainProvider = "provider"
+	spendGrainModel    = "model"
+	spendGrainClient   = "client"
+
 	// defaultAIGatewaySpendWindow is the lookback applied when no spend
 	// window is requested.
 	defaultAIGatewaySpendWindow = 30 * 24 * time.Hour
@@ -859,25 +867,12 @@ func (api *API) aiGatewaySpendSummaryForUser(rw http.ResponseWriter, r *http.Req
 	}
 
 	var (
-		totals     database.GetAIBridgeSpendUserSummaryRow
-		byModel    []database.ListAIBridgeSpendByUserModelRow
-		byClient   []database.ListAIBridgeSpendByUserClientRow
-		byProvider []database.ListAIBridgeSpendByUserProviderRow
+		rollups  []database.ListAIBridgeSpendRollupsRow
+		sessions []database.ListAIBridgeSpendSessionCountsRow
 	)
 	err := api.Database.InTx(func(db database.Store) error {
 		var err error
-		totals, err = db.GetAIBridgeSpendUserSummary(ctx, database.GetAIBridgeSpendUserSummaryParams{
-			UserID:       userID,
-			StartDate:    filter.start,
-			EndDate:      filter.end,
-			ProviderName: filter.providerName,
-			Client:       filter.client,
-			Model:        filter.model,
-		})
-		if err != nil {
-			return xerrors.Errorf("get spend summary: %w", err)
-		}
-		byModel, err = db.ListAIBridgeSpendByUserModel(ctx, database.ListAIBridgeSpendByUserModelParams{
+		rollups, err = db.ListAIBridgeSpendRollups(ctx, database.ListAIBridgeSpendRollupsParams{
 			UserID:       userID,
 			StartDate:    filter.start,
 			EndDate:      filter.end,
@@ -887,31 +882,18 @@ func (api *API) aiGatewaySpendSummaryForUser(rw http.ResponseWriter, r *http.Req
 			LimitCount:   codersdk.AIGatewaySpendBreakdownLimit,
 		})
 		if err != nil {
-			return xerrors.Errorf("list spend by model: %w", err)
+			return xerrors.Errorf("list spend rollups: %w", err)
 		}
-		byClient, err = db.ListAIBridgeSpendByUserClient(ctx, database.ListAIBridgeSpendByUserClientParams{
+		sessions, err = db.ListAIBridgeSpendSessionCounts(ctx, database.ListAIBridgeSpendSessionCountsParams{
 			UserID:       userID,
 			StartDate:    filter.start,
 			EndDate:      filter.end,
 			ProviderName: filter.providerName,
 			Client:       filter.client,
 			Model:        filter.model,
-			LimitCount:   codersdk.AIGatewaySpendBreakdownLimit,
 		})
 		if err != nil {
-			return xerrors.Errorf("list spend by client: %w", err)
-		}
-		byProvider, err = db.ListAIBridgeSpendByUserProvider(ctx, database.ListAIBridgeSpendByUserProviderParams{
-			UserID:       userID,
-			StartDate:    filter.start,
-			EndDate:      filter.end,
-			ProviderName: filter.providerName,
-			Client:       filter.client,
-			Model:        filter.model,
-			LimitCount:   codersdk.AIGatewaySpendBreakdownLimit,
-		})
-		if err != nil {
-			return xerrors.Errorf("list spend by provider: %w", err)
+			return xerrors.Errorf("list spend session counts: %w", err)
 		}
 		return nil
 	}, &database.TxOptions{
@@ -928,81 +910,57 @@ func (api *API) aiGatewaySpendSummaryForUser(rw http.ResponseWriter, r *http.Req
 	}
 
 	resp := codersdk.AIGatewaySpendUserSummary{
-		StartDate: filter.start,
-		EndDate:   filter.end,
-		AIGatewaySpendTotals: codersdk.AIGatewaySpendTotals{
-			AIGatewaySpendUsage: codersdk.AIGatewaySpendUsage{
-				TotalCostMicros:       totals.TotalCostMicros,
-				RequestCount:          totals.RequestCount,
-				UnpricedRequestCount:  totals.UnpricedRequestCount,
-				InputTokens:           totals.InputTokens,
-				OutputTokens:          totals.OutputTokens,
-				CacheReadInputTokens:  totals.CacheReadInputTokens,
-				CacheWriteInputTokens: totals.CacheWriteInputTokens,
-			},
-			SessionCount: totals.SessionCount,
-		},
-		ByProvider: make([]codersdk.AIGatewaySpendProviderBreakdown, len(byProvider)),
-		ByModel:    make([]codersdk.AIGatewaySpendModelBreakdown, len(byModel)),
-		ByClient:   make([]codersdk.AIGatewaySpendClientBreakdown, len(byClient)),
+		StartDate:  filter.start,
+		EndDate:    filter.end,
+		ByProvider: []codersdk.AIGatewaySpendProviderBreakdown{},
+		ByModel:    []codersdk.AIGatewaySpendModelBreakdown{},
+		ByClient:   []codersdk.AIGatewaySpendClientBreakdown{},
 	}
-	// The window function that carries total_count only rides along on
-	// returned rows.
-	if len(byModel) > 0 {
-		resp.ModelCount = byModel[0].TotalCount
-	}
-	if len(byClient) > 0 {
-		resp.ClientCount = byClient[0].TotalCount
-	}
-	if len(byProvider) > 0 {
-		resp.ProviderCount = byProvider[0].TotalCount
-	}
-	for i, row := range byProvider {
-		resp.ByProvider[i] = codersdk.AIGatewaySpendProviderBreakdown{
-			Provider:     row.Provider,
-			ProviderName: row.ProviderName,
-			AIGatewaySpendUsage: codersdk.AIGatewaySpendUsage{
-				TotalCostMicros:       row.TotalCostMicros,
-				RequestCount:          row.RequestCount,
-				UnpricedRequestCount:  row.UnpricedRequestCount,
-				InputTokens:           row.InputTokens,
-				OutputTokens:          row.OutputTokens,
-				CacheReadInputTokens:  row.CacheReadInputTokens,
-				CacheWriteInputTokens: row.CacheWriteInputTokens,
-			},
+	sessionsByClient := make(map[string]int64, len(sessions))
+	for _, row := range sessions {
+		if row.Grain == spendGrainTotal {
+			resp.SessionCount = row.SessionCount
+			continue
 		}
+		sessionsByClient[row.Client] = row.SessionCount
 	}
-	for i, row := range byModel {
-		resp.ByModel[i] = codersdk.AIGatewaySpendModelBreakdown{
-			Provider:     row.Provider,
-			ProviderName: row.ProviderName,
-			Model:        row.Model,
-			AIGatewaySpendUsage: codersdk.AIGatewaySpendUsage{
-				TotalCostMicros:       row.TotalCostMicros,
-				RequestCount:          row.RequestCount,
-				UnpricedRequestCount:  row.UnpricedRequestCount,
-				InputTokens:           row.InputTokens,
-				OutputTokens:          row.OutputTokens,
-				CacheReadInputTokens:  row.CacheReadInputTokens,
-				CacheWriteInputTokens: row.CacheWriteInputTokens,
-			},
+	for _, row := range rollups {
+		usage := codersdk.AIGatewaySpendUsage{
+			TotalCostMicros:       row.TotalCostMicros,
+			RequestCount:          row.RequestCount,
+			UnpricedRequestCount:  row.UnpricedRequestCount,
+			InputTokens:           row.InputTokens,
+			OutputTokens:          row.OutputTokens,
+			CacheReadInputTokens:  row.CacheReadInputTokens,
+			CacheWriteInputTokens: row.CacheWriteInputTokens,
 		}
-	}
-	for i, row := range byClient {
-		resp.ByClient[i] = codersdk.AIGatewaySpendClientBreakdown{
-			Client: row.Client,
-			AIGatewaySpendTotals: codersdk.AIGatewaySpendTotals{
-				AIGatewaySpendUsage: codersdk.AIGatewaySpendUsage{
-					TotalCostMicros:       row.TotalCostMicros,
-					RequestCount:          row.RequestCount,
-					UnpricedRequestCount:  row.UnpricedRequestCount,
-					InputTokens:           row.InputTokens,
-					OutputTokens:          row.OutputTokens,
-					CacheReadInputTokens:  row.CacheReadInputTokens,
-					CacheWriteInputTokens: row.CacheWriteInputTokens,
+		switch row.Grain {
+		case spendGrainTotal:
+			resp.AIGatewaySpendUsage = usage
+		case spendGrainProvider:
+			resp.ProviderCount = row.TotalCount
+			resp.ByProvider = append(resp.ByProvider, codersdk.AIGatewaySpendProviderBreakdown{
+				Provider:            row.Provider,
+				ProviderName:        row.ProviderName,
+				AIGatewaySpendUsage: usage,
+			})
+		case spendGrainModel:
+			resp.ModelCount = row.TotalCount
+			resp.ByModel = append(resp.ByModel, codersdk.AIGatewaySpendModelBreakdown{
+				Provider:            row.Provider,
+				ProviderName:        row.ProviderName,
+				Model:               row.Model,
+				AIGatewaySpendUsage: usage,
+			})
+		case spendGrainClient:
+			resp.ClientCount = row.TotalCount
+			resp.ByClient = append(resp.ByClient, codersdk.AIGatewaySpendClientBreakdown{
+				Client: row.Client,
+				AIGatewaySpendTotals: codersdk.AIGatewaySpendTotals{
+					AIGatewaySpendUsage: usage,
+					SessionCount:        sessionsByClient[row.Client],
 				},
-				SessionCount: row.SessionCount,
-			},
+			})
 		}
 	}
 

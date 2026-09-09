@@ -330,7 +330,6 @@ type sqlcQuerier interface {
 	// sequence_number for the last interception so the window stays an
 	// index-satisfiable range.
 	GetAIBridgeSessionTopDomains(ctx context.Context, arg GetAIBridgeSessionTopDomainsParams) ([]GetAIBridgeSessionTopDomainsRow, error)
-	GetAIBridgeSpendUserSummary(ctx context.Context, arg GetAIBridgeSpendUserSummaryParams) (GetAIBridgeSpendUserSummaryRow, error)
 	GetAIBridgeTokenUsagesByInterceptionID(ctx context.Context, interceptionID uuid.UUID) ([]AIBridgeTokenUsage, error)
 	GetAIBridgeToolUsagesByInterceptionID(ctx context.Context, interceptionID uuid.UUID) ([]AIBridgeToolUsage, error)
 	GetAIBridgeUserPromptsByInterceptionID(ctx context.Context, interceptionID uuid.UUID) ([]AIBridgeUserPrompt, error)
@@ -1310,23 +1309,29 @@ type sqlcQuerier interface {
 	// AI spend overview queries. They share one aggregation contract:
 	//   * A request is a finished interception (ended_at IS NOT NULL) whose
 	//     started_at falls in the closed-open [start_date, end_date) window.
-	//   * Token usages are joined with LEFT JOIN, so a finished request without usage
-	//     (for example one that failed upstream) still counts as a request.
+	//   * A finished request without token usage (for example one that failed
+	//     upstream) still counts as a request: request and session counts come
+	//     from aibridge_interceptions alone and usage sums are joined afterwards.
 	//   * total_cost_micros sums every priced usage regardless of
 	//     effective_group_id, matching the CSV export. unpriced_request_count
 	//     is the number of requests with at least one usage whose cost_micros
-	//     is NULL; the tu.id guard keeps the unmatched LEFT JOIN side from
-	//     reading as unpriced usage.
+	//     is NULL.
 	//   * A session is a distinct (initiator_id, session_id) pair.
 	//     Client is COALESCE(client, 'Unknown').
-	//   * A zero user_id includes every user in summary and breakdown queries.
+	//   * A zero user_id includes every user in rollup and session queries.
 	//   * Empty provider_name, model, and client match every request; a
 	//     non-empty value keeps only requests with that exact dimension, with
 	//     client compared after the same 'Unknown' coalesce.
+	//
+	// Requests, usage sums, and unpriced requests are aggregated in separate
+	// CTEs that go straight from the base tables to the output grain, so the
+	// shared filters are repeated per CTE on purpose. Grouping by interception
+	// first and then by user or dimension forces sorted passes over every usage
+	// row, which is several times slower on large deployments.
 	ListAIBridgeSpendByUser(ctx context.Context, arg ListAIBridgeSpendByUserParams) ([]ListAIBridgeSpendByUserRow, error)
-	ListAIBridgeSpendByUserClient(ctx context.Context, arg ListAIBridgeSpendByUserClientParams) ([]ListAIBridgeSpendByUserClientRow, error)
-	ListAIBridgeSpendByUserModel(ctx context.Context, arg ListAIBridgeSpendByUserModelParams) ([]ListAIBridgeSpendByUserModelRow, error)
-	ListAIBridgeSpendByUserProvider(ctx context.Context, arg ListAIBridgeSpendByUserProviderParams) ([]ListAIBridgeSpendByUserProviderRow, error)
+	ListAIBridgeSpendRollups(ctx context.Context, arg ListAIBridgeSpendRollupsParams) ([]ListAIBridgeSpendRollupsRow, error)
+	// A session can span clients, so the total dedupes the pairs again.
+	ListAIBridgeSpendSessionCounts(ctx context.Context, arg ListAIBridgeSpendSessionCountsParams) ([]ListAIBridgeSpendSessionCountsRow, error)
 	ListAIBridgeTokenUsagesByInterceptionIDs(ctx context.Context, interceptionIds []uuid.UUID) ([]AIBridgeTokenUsage, error)
 	ListAIBridgeToolUsagesByInterceptionIDs(ctx context.Context, interceptionIds []uuid.UUID) ([]AIBridgeToolUsage, error)
 	ListAIBridgeUserPromptsByInterceptionIDs(ctx context.Context, interceptionIds []uuid.UUID) ([]AIBridgeUserPrompt, error)

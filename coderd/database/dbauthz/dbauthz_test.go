@@ -7110,29 +7110,18 @@ func (s *MethodTestSuite) TestAIBridge() {
 		check.Args(params).Asserts(rbac.ResourceAibridgeInterception, policy.ActionRead).Returns([]database.ListAIBridgeSpendByUserRow{})
 	}))
 
-	s.Run("GetAIBridgeSpendUserSummary", s.Mocked(func(db *dbmock.MockStore, faker *gofakeit.Faker, check *expects) {
-		params := database.GetAIBridgeSpendUserSummaryParams{UserID: uuid.New()}
-		row := database.GetAIBridgeSpendUserSummaryRow{TotalCostMicros: 1000, RequestCount: 2}
-		db.EXPECT().GetAIBridgeSpendUserSummary(gomock.Any(), params).Return(row, nil).AnyTimes()
-		check.Args(params).Asserts(rbac.ResourceAibridgeInterception, policy.ActionRead).Returns(row)
+	s.Run("ListAIBridgeSpendRollups", s.Mocked(func(db *dbmock.MockStore, faker *gofakeit.Faker, check *expects) {
+		params := database.ListAIBridgeSpendRollupsParams{UserID: uuid.New(), LimitCount: 10}
+		rows := []database.ListAIBridgeSpendRollupsRow{{Grain: "total", TotalCostMicros: 1000, RequestCount: 2, TotalCount: 1}}
+		db.EXPECT().ListAIBridgeSpendRollups(gomock.Any(), params).Return(rows, nil).AnyTimes()
+		check.Args(params).Asserts(rbac.ResourceAibridgeInterception, policy.ActionRead).Returns(rows)
 	}))
 
-	s.Run("ListAIBridgeSpendByUserModel", s.Mocked(func(db *dbmock.MockStore, faker *gofakeit.Faker, check *expects) {
-		params := database.ListAIBridgeSpendByUserModelParams{UserID: uuid.New()}
-		db.EXPECT().ListAIBridgeSpendByUserModel(gomock.Any(), params).Return([]database.ListAIBridgeSpendByUserModelRow{}, nil).AnyTimes()
-		check.Args(params).Asserts(rbac.ResourceAibridgeInterception, policy.ActionRead).Returns([]database.ListAIBridgeSpendByUserModelRow{})
-	}))
-
-	s.Run("ListAIBridgeSpendByUserProvider", s.Mocked(func(db *dbmock.MockStore, faker *gofakeit.Faker, check *expects) {
-		params := database.ListAIBridgeSpendByUserProviderParams{UserID: uuid.New()}
-		db.EXPECT().ListAIBridgeSpendByUserProvider(gomock.Any(), params).Return([]database.ListAIBridgeSpendByUserProviderRow{}, nil).AnyTimes()
-		check.Args(params).Asserts(rbac.ResourceAibridgeInterception, policy.ActionRead).Returns([]database.ListAIBridgeSpendByUserProviderRow{})
-	}))
-
-	s.Run("ListAIBridgeSpendByUserClient", s.Mocked(func(db *dbmock.MockStore, faker *gofakeit.Faker, check *expects) {
-		params := database.ListAIBridgeSpendByUserClientParams{UserID: uuid.New()}
-		db.EXPECT().ListAIBridgeSpendByUserClient(gomock.Any(), params).Return([]database.ListAIBridgeSpendByUserClientRow{}, nil).AnyTimes()
-		check.Args(params).Asserts(rbac.ResourceAibridgeInterception, policy.ActionRead).Returns([]database.ListAIBridgeSpendByUserClientRow{})
+	s.Run("ListAIBridgeSpendSessionCounts", s.Mocked(func(db *dbmock.MockStore, faker *gofakeit.Faker, check *expects) {
+		params := database.ListAIBridgeSpendSessionCountsParams{UserID: uuid.New()}
+		rows := []database.ListAIBridgeSpendSessionCountsRow{{Grain: "total", SessionCount: 3}}
+		db.EXPECT().ListAIBridgeSpendSessionCounts(gomock.Any(), params).Return(rows, nil).AnyTimes()
+		check.Args(params).Asserts(rbac.ResourceAibridgeInterception, policy.ActionRead).Returns(rows)
 	}))
 
 	s.Run("ListAIBridgeTokenUsagesByInterceptionIDs", s.Mocked(func(db *dbmock.MockStore, faker *gofakeit.Faker, check *expects) {

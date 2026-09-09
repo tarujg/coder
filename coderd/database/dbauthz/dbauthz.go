@@ -2898,13 +2898,6 @@ func (q *querier) GetAIBridgeSessionTopDomains(ctx context.Context, arg database
 	return q.db.GetAIBridgeSessionTopDomains(ctx, arg)
 }
 
-func (q *querier) GetAIBridgeSpendUserSummary(ctx context.Context, arg database.GetAIBridgeSpendUserSummaryParams) (database.GetAIBridgeSpendUserSummaryRow, error) {
-	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceAibridgeInterception); err != nil {
-		return database.GetAIBridgeSpendUserSummaryRow{}, err
-	}
-	return q.db.GetAIBridgeSpendUserSummary(ctx, arg)
-}
-
 func (q *querier) GetAIBridgeTokenUsagesByInterceptionID(ctx context.Context, interceptionID uuid.UUID) ([]database.AIBridgeTokenUsage, error) {
 	// All aibridge_token_usages records belong to the initiator of their associated interception.
 	if err := q.authorizeAIBridgeInterceptionAction(ctx, policy.ActionRead, interceptionID); err != nil {
@@ -6988,25 +6981,18 @@ func (q *querier) ListAIBridgeSpendByUser(ctx context.Context, arg database.List
 	return q.db.ListAIBridgeSpendByUser(ctx, arg)
 }
 
-func (q *querier) ListAIBridgeSpendByUserClient(ctx context.Context, arg database.ListAIBridgeSpendByUserClientParams) ([]database.ListAIBridgeSpendByUserClientRow, error) {
+func (q *querier) ListAIBridgeSpendRollups(ctx context.Context, arg database.ListAIBridgeSpendRollupsParams) ([]database.ListAIBridgeSpendRollupsRow, error) {
 	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceAibridgeInterception); err != nil {
 		return nil, err
 	}
-	return q.db.ListAIBridgeSpendByUserClient(ctx, arg)
+	return q.db.ListAIBridgeSpendRollups(ctx, arg)
 }
 
-func (q *querier) ListAIBridgeSpendByUserModel(ctx context.Context, arg database.ListAIBridgeSpendByUserModelParams) ([]database.ListAIBridgeSpendByUserModelRow, error) {
+func (q *querier) ListAIBridgeSpendSessionCounts(ctx context.Context, arg database.ListAIBridgeSpendSessionCountsParams) ([]database.ListAIBridgeSpendSessionCountsRow, error) {
 	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceAibridgeInterception); err != nil {
 		return nil, err
 	}
-	return q.db.ListAIBridgeSpendByUserModel(ctx, arg)
-}
-
-func (q *querier) ListAIBridgeSpendByUserProvider(ctx context.Context, arg database.ListAIBridgeSpendByUserProviderParams) ([]database.ListAIBridgeSpendByUserProviderRow, error) {
-	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceAibridgeInterception); err != nil {
-		return nil, err
-	}
-	return q.db.ListAIBridgeSpendByUserProvider(ctx, arg)
+	return q.db.ListAIBridgeSpendSessionCounts(ctx, arg)
 }
 
 func (q *querier) ListAIBridgeTokenUsagesByInterceptionIDs(ctx context.Context, interceptionIDs []uuid.UUID) ([]database.AIBridgeTokenUsage, error) {
