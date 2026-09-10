@@ -62,6 +62,7 @@ func (r *RootCmd) scaletestCmd() *serpent.Command {
 			r.scaletestCreateWorkspaces(),
 			r.scaletestWorkspaceUpdates(),
 			r.scaletestWorkspaceTraffic(),
+			r.scaletestWorkspaceTrafficProbe(),
 			r.scaletestAutostart(),
 			r.scaletestNotifications(),
 			r.scaletestTaskStatus(),
